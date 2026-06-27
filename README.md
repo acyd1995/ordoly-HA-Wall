@@ -6,30 +6,33 @@ the Ordoly app: each member gets a column, you can **check tasks done/undone**,
 **request a skip**, open **task info**, browse **badges**, and browse + **buy
 shop items** — all live, updating the moment something changes on a phone.
 
-It is **read-and-write but account-free**. The card never asks for your Ordoly
-login. Instead you generate a **username + password + key** in the app, scoped to
-one wall you administer, and the card talks only to that wall.
+It signs in with your Ordoly **email + an API key** — never your account
+password. You generate the key in the app, scoped to one wall you administer.
 
-## 1. Generate credentials in the Ordoly app
+## 1. Generate an API key in the Ordoly app
 
 1. Open the Ordoly app → **Settings → Home Assistant wall**.
 2. Tap **Add a Home Assistant card**, pick a wall you administer (a group where
-   you're an admin, or a custom wall you own), and tap **Generate credentials**.
-3. Copy the **Server URL**, **Username**, **Password** and **Key** shown. They're
-   shown only once — use **Copy all for Home Assistant** to grab them together.
+   you're an admin, or a custom wall you own), and tap **Generate API key**.
+3. Copy the **Server URL**, your **Email**, and the **Key**. The key is shown
+   only once — use **Copy all for Home Assistant** to grab them together.
 
-You can revoke a credential any time from the same screen; the card stops working
+You can revoke a key any time from the same screen; the card stops working
 immediately.
 
 ## 2. Install the card in Home Assistant
 
 ### Option A — HACS (recommended)
 
-1. In HACS, open the three-dot menu → **Custom repositories**.
-2. Add this repository's URL with category **Dashboard** (Lovelace plugin).
-3. Install **Ordoly Wall Card**, then reload your browser.
+1. Publish the contents of this folder (`ordoly-wall-card.js`, `hacs.json`,
+   `README.md`) as their own GitHub repo (the files must be at the repo root —
+   `hacs.json` has `content_in_root: true`).
+2. In HACS, open the three-dot menu → **Custom repositories**, paste the repo
+   URL with category **Dashboard**, → Add.
+3. Install **Ordoly Wall Card**, then reload your browser. HACS registers the
+   dashboard resource for you.
 
-### Option B — Manual
+### Option B — Manual (no GitHub)
 
 1. Copy `ordoly-wall-card.js` into your Home Assistant `config/www/` folder.
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add resource**.
@@ -46,9 +49,8 @@ immediately.
 ```yaml
 type: custom:ordoly-wall-card
 base_url: http://homeassistant.local:3000   # your Ordoly backend
-username: wall_xxxxxxxxxxxx
-password: "<the password from the app>"
-key: "<the key from the app>"
+email: you@example.com                      # your Ordoly account email
+key: "<the API key from the app>"
 title: Kitchen wall        # optional — overrides the wall's own name
 height: 62vh               # optional — height of each member's task column
 ```
@@ -62,19 +64,19 @@ height: 62vh               # optional — height of each member's task column
   rendering the dashboard can reach. The browser (not the HA server) makes the
   requests, so the address must resolve from the device viewing the dashboard.
 - If your Ordoly backend runs behind an app key (`APP_SECRET`), you do **not**
-  need it here — `/ha-wall/*` is authenticated entirely by the credential.
+  need it here — `/ha-wall/*` is authenticated entirely by your email + key.
 
 ## What it does *not* do
 
 - It can't manage members, edit wall settings, or accept custom-wall invites —
   do those in the app.
-- The exit-lock (`lock_enabled`) is advisory here; the credential already gates
-  the whole wall, and a dashboard card isn't a fullscreen kiosk.
+- The exit-lock (`lock_enabled`) is advisory here; the key already gates the
+  whole wall, and a dashboard card isn't a fullscreen kiosk.
 
 ## How it works
 
 ```
-Dashboard card ──POST /ha-wall/session {username,password,key}──▶ Ordoly backend
+Dashboard card ──POST /ha-wall/session {email,key}──▶ Ordoly backend
    (custom:ordoly-wall-card)        ← short wall-scoped token + SSE token
         ├── GET  /ha-wall/data                  render the wall
         ├── POST/DELETE /ha-wall/complete        check / uncheck a task
@@ -84,5 +86,6 @@ Dashboard card ──POST /ha-wall/session {username,password,key}──▶ Ordo
         └── GET  /ha-wall/stream?token=…         live updates (SSE)
 ```
 
-Everything is bound to the one wall the credential was generated for; a leaked
-credential can reach nothing else.
+The key is the secret; the email only confirms which account it belongs to.
+Everything is bound to the one wall the key was generated for — a leaked key can
+reach nothing else, and never your account password.

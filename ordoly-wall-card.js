@@ -6,10 +6,10 @@
  * behaving exactly like the wall in the Ordoly app: check tasks done/undone,
  * request a skip, read task info, browse + buy shop items, view badges.
  *
- * Security: it never uses an Ordoly account login. The user generates a
- * username + password + key in the app (Settings → "Home Assistant wall") for a
- * single wall they administer; the card exchanges that triple at POST
- * /ha-wall/session for a short, wall-scoped token and talks only to /ha-wall/*.
+ * Security: it never stores your account password. You generate an API KEY in
+ * the app (Settings → "Home Assistant wall") for a single wall you administer;
+ * the card signs in with your Ordoly EMAIL + that key at POST /ha-wall/session
+ * for a short, wall-scoped token, and talks only to /ha-wall/*.
  *
  * Self-contained vanilla JS — no build step, no dependencies.
  */
@@ -210,36 +210,43 @@ class OrdolyWallCard extends HTMLElement {
     this._reloadDebounce = null;
     this._refreshTimer = null;
     this._safetyTimer = null;
+    this._restartTimer = null;
     this._busyTasks = new Set();
   }
 
   setConfig(config) {
     if (!config || !config.base_url) throw new Error('ordoly-wall-card: "base_url" is required');
-    if (!config.username || !config.password || !config.key) {
-      throw new Error('ordoly-wall-card: "username", "password" and "key" are required (generate them in the Ordoly app → Settings → Home Assistant wall)');
+    if (!config.email || !config.key) {
+      throw new Error('ordoly-wall-card: "email" and "key" are required (generate the key in the Ordoly app → Settings → Home Assistant wall, and use your Ordoly email)');
     }
     this._config = {
       base_url: String(config.base_url).replace(/\/+$/, ''),
-      username: String(config.username),
-      password: String(config.password),
+      email: String(config.email),
       key: String(config.key),
       title: config.title || '',
       height: config.height || '62vh',
     };
-    if (this.isConnected) this._restart();
+    // Debounced: the dashboard editor calls setConfig on every keystroke, so
+    // wait until typing pauses before re-authenticating and fetching the wall.
+    if (this.isConnected) this._scheduleRestart(700);
   }
 
   set hass(_) { /* not used — the card talks to the Ordoly backend directly */ }
   getCardSize() { return 8; }
   static getConfigElement() { return document.createElement('ordoly-wall-card-editor'); }
   static getStubConfig() {
-    return { base_url: 'http://homeassistant.local:3000', username: '', password: '', key: '' };
+    return { base_url: 'http://homeassistant.local:3000', email: '', key: '' };
   }
 
-  connectedCallback() { if (this._config) this._restart(); }
+  connectedCallback() { if (this._config) this._scheduleRestart(0); }
   disconnectedCallback() { this._teardown(); }
 
   // ── lifecycle ────────────────────────────────────────────────────────────
+  _scheduleRestart(delay = 0) {
+    clearTimeout(this._restartTimer);
+    this._restartTimer = setTimeout(() => this._restart(), delay);
+  }
+
   async _restart() {
     this._teardown();
     this._build();
@@ -258,6 +265,7 @@ class OrdolyWallCard extends HTMLElement {
     if (this._refreshTimer) { clearInterval(this._refreshTimer); this._refreshTimer = null; }
     if (this._safetyTimer) { clearInterval(this._safetyTimer); this._safetyTimer = null; }
     if (this._reloadDebounce) { clearTimeout(this._reloadDebounce); this._reloadDebounce = null; }
+    if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer = null; }
   }
 
   _build() {
@@ -311,14 +319,13 @@ class OrdolyWallCard extends HTMLElement {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: this._config.username,
-          password: this._config.password,
+          email: this._config.email,
           key: this._config.key,
         }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        this._authError = r.status === 401 ? 'Invalid credentials'
+        this._authError = r.status === 401 ? 'Invalid email or key'
           : r.status === 403 ? 'This wall is unavailable (the admin may have lost access)'
           : r.status === 429 ? 'Too many attempts — try again shortly'
           : (j.message || `Sign-in failed (${r.status})`);
@@ -880,24 +887,31 @@ class OrdolyWallCard extends HTMLElement {
 customElements.define('ordoly-wall-card', OrdolyWallCard);
 
 // ── Visual config editor ─────────────────────────────────────────────────────
+const EDITOR_FIELDS = [
+  ['base_url', 'Server URL', 'text', 'http://homeassistant.local:3000'],
+  ['email', 'Ordoly email', 'text', ''],
+  ['key', 'API key', 'password', ''],
+  ['title', 'Title (optional)', 'text', ''],
+];
+
 class OrdolyWallCardEditor extends HTMLElement {
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) {
+    this._config = { ...config };
+    if (!this._built) this._build();
+    else this._sync();
+  }
   set hass(_) {}
   _emit() {
     this.dispatchEvent(new CustomEvent('config-changed', {
       detail: { config: this._config }, bubbles: true, composed: true,
     }));
   }
-  _render() {
+  // Build the form DOM ONCE. The old code rebuilt innerHTML on every keystroke
+  // (setConfig → re-render), which destroyed and recreated the <input> being
+  // typed in — so it lost focus after each character. Now the inputs persist.
+  _build() {
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     const c = this._config || {};
-    const fields = [
-      ['base_url', 'Server URL', 'text', 'http://homeassistant.local:3000'],
-      ['username', 'Username', 'text', ''],
-      ['password', 'Password', 'password', ''],
-      ['key', 'Key', 'password', ''],
-      ['title', 'Title (optional)', 'text', ''],
-    ];
     this.shadowRoot.innerHTML = `
       <style>
         .row { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; }
@@ -905,17 +919,28 @@ class OrdolyWallCardEditor extends HTMLElement {
         input { padding:10px 12px; border-radius:8px; border:1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color, #000); font:inherit; }
         .hint { font-size:12px; color: var(--secondary-text-color, #888); margin: -4px 0 14px; }
       </style>
-      <div class="hint">Generate these in the Ordoly app: Settings → Home Assistant wall.</div>
-      ${fields.map(([k, lbl, type, ph]) => `
+      <div class="hint">Generate the API key in the Ordoly app: Settings → Home Assistant wall. Use your Ordoly account email.</div>
+      ${EDITOR_FIELDS.map(([k, lbl, type, ph]) => `
         <div class="row">
           <label for="owc-${k}">${lbl}</label>
           <input id="owc-${k}" type="${type}" placeholder="${ph}" value="${esc(c[k] || '')}">
         </div>`).join('')}`;
-    for (const [k] of fields) {
-      this.shadowRoot.getElementById(`owc-${k}`).addEventListener('input', (e) => {
+    this._inputs = {};
+    for (const [k] of EDITOR_FIELDS) {
+      const el = this.shadowRoot.getElementById(`owc-${k}`);
+      this._inputs[k] = el;
+      el.addEventListener('input', (e) => {
         this._config = { ...this._config, type: 'custom:ordoly-wall-card', [k]: e.target.value };
         this._emit();
       });
+    }
+    this._built = true;
+  }
+  // Reflect an external config change without disturbing the field being edited.
+  _sync() {
+    for (const [k, el] of Object.entries(this._inputs || {})) {
+      const v = (this._config && this._config[k]) || '';
+      if (el !== this.shadowRoot.activeElement && el.value !== v) el.value = v;
     }
   }
 }

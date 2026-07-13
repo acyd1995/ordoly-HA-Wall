@@ -53,9 +53,16 @@ email: you@example.com                      # your Ordoly account email
 key: "<the API key from the app>"
 title: Kitchen wall        # optional — overrides the wall's own name
 height: 62vh               # optional — height of each member's task column
+language: auto             # optional — auto | en | nl | fr | es | el | tr | zh
 ```
 
 3. Save. The wall appears and stays live.
+
+The card is available in all 7 Ordoly languages (English, Nederlands, Français,
+Español, Ελληνικά, Türkçe, 中文). Pick one from the **Language** dropdown in the
+visual editor, or set `language:` in YAML. Leave it on **`auto`** (the default)
+to follow your Home Assistant UI language, falling back to the browser language
+and then English.
 
 ## Network notes
 

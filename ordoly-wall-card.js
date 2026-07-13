@@ -22,8 +22,7 @@ const defaultWallColor = (id) => PALETTE[Math.abs(Number(id) || 0) % PALETTE.len
 
 const TIER_COLORS = { grey: '#B5A0FF', bronze: '#CD8B3A', silver: '#B0B8C4', gold: '#E9A934' };
 const tierColor = (t) => TIER_COLORS[t] || TIER_COLORS.grey;
-const TIER_LABELS = { grey: 'Starter', bronze: 'Bronze', silver: 'Silver', gold: 'Gold' };
-const tierLabelFor = (t) => TIER_LABELS[t] || '';
+// Tier labels are localized per-instance via OrdolyWallCard._tierLabel().
 const TIER_ORDER = [null, 'grey', 'bronze', 'silver', 'gold'];
 const tierPoints = (t) => Math.max(0, TIER_ORDER.indexOf(t));
 
@@ -198,6 +197,497 @@ dialog.owc-panel::backdrop { background: rgba(0,0,0,.42); }
 const esc = (s) => String(s == null ? '' : s).replace(/[&"<>]/g, (c) =>
   ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[c]));
 
+// ── i18n ─────────────────────────────────────────────────────────────────────
+// The card ships all 7 Ordoly languages. The active language is chosen in the
+// card editor ("Language" → Auto or a specific language); "Auto" follows the
+// Home Assistant UI language, then the browser, then English. Wording mirrors
+// the Ordoly app where the same concept exists (season/event countdown, task
+// statuses, shop, badges, leaderboard) so the wall reads the same everywhere.
+const I18N = {
+  en: {
+    loading: 'Loading…',
+    couldNotConnect: 'Could not connect',
+    invalidCreds: 'Invalid email or key',
+    wallUnavailable: 'This wall is unavailable (the admin may have lost access)',
+    tooManyAttempts: 'Too many attempts — try again shortly',
+    signInFailed: (n) => `Sign-in failed (${n})`,
+    cannotReach: 'Cannot reach the Ordoly server. Check the Server URL.',
+    credentialRevoked: 'Credential revoked',
+    failedToLoadCode: (n) => `Failed to load (${n})`,
+    failedToLoad: 'Failed to load',
+    refresh: 'Refresh',
+    everyoneDone: "Everyone's done for today! 🎉",
+    memberCount: (n) => (n === 1 ? '1 member' : `${n} members`),
+    wallInactive: 'This wall is inactive.',
+    noContent: 'No content to show right now.',
+    shop: 'Shop',
+    badges: 'Badges',
+    ranking: 'Ranking',
+    allDone: 'All done! 🎉',
+    seasonEnded: 'Season ended',
+    seasonEndsToday: 'Season ends today',
+    seasonEndsInDays: (n) => `Season ends in ${n} days`,
+    eventPassed: 'The event has passed',
+    eventToday: 'The big day is today!',
+    eventInDays: (n) => `${n} days to go`,
+    requestSkip: 'Request skip',
+    info: 'Info',
+    skipRequested: 'Skip requested — a parent/admin will approve it',
+    skipFailed: 'Could not request skip',
+    actionFailed: 'Action failed',
+    close: 'Close',
+    statusDone: 'Done',
+    statusPending: 'Awaiting approval',
+    statusSkip: 'Skip requested',
+    statusOpen: 'Open',
+    pts: (n) => `${n} pts`,
+    shopEmpty: 'No items available right now.',
+    shopFailed: 'Failed to load shop',
+    bought: 'Bought',
+    locked: 'Locked',
+    closed: 'Closed',
+    buy: 'Buy',
+    buyDone: 'Done',
+    purchaseFailed: 'Purchase failed',
+    badgesEmpty: 'No badges earned yet.',
+    badgesFailed: 'Failed to load badges',
+    tierStarter: 'Starter',
+    tierBronze: 'Bronze',
+    tierSilver: 'Silver',
+    tierGold: 'Gold',
+    badgeProgress: (metric, u, thr, tier) => `${metric}${u} → ${thr}${u} for ${tier}`,
+    rankingEmpty: 'No members yet.',
+    rankingFailed: 'Failed to load ranking',
+    cfgServerUrl: 'Server URL',
+    cfgEmail: 'Ordoly email',
+    cfgKey: 'API key',
+    cfgTitle: 'Title (optional)',
+    cfgLanguage: 'Language',
+    cfgLangAuto: 'Auto (Home Assistant)',
+    cfgHint: 'Generate the API key in the Ordoly app: Settings → Home Assistant wall. Use your Ordoly account email.',
+    errBaseUrl: 'The Server URL is required',
+    errCreds: 'Email and key are required — generate the key in the Ordoly app (Settings → Home Assistant wall) and use your Ordoly email',
+    pickerDesc: 'Show one Ordoly wall (group or custom) live and interactive.',
+  },
+  nl: {
+    loading: 'Laden…',
+    couldNotConnect: 'Kan geen verbinding maken',
+    invalidCreds: 'Ongeldig e-mailadres of sleutel',
+    wallUnavailable: 'Deze muur is niet beschikbaar (de beheerder heeft mogelijk geen toegang meer)',
+    tooManyAttempts: 'Te veel pogingen — probeer het zo opnieuw',
+    signInFailed: (n) => `Aanmelden mislukt (${n})`,
+    cannotReach: 'Kan de Ordoly-server niet bereiken. Controleer de server-URL.',
+    credentialRevoked: 'Toegang ingetrokken',
+    failedToLoadCode: (n) => `Laden mislukt (${n})`,
+    failedToLoad: 'Laden mislukt',
+    refresh: 'Vernieuwen',
+    everyoneDone: 'Iedereen is klaar voor vandaag! 🎉',
+    memberCount: (n) => (n === 1 ? '1 lid' : `${n} leden`),
+    wallInactive: 'Deze muur is inactief.',
+    noContent: 'Nu niets om te tonen.',
+    shop: 'Winkel',
+    badges: 'Badges',
+    ranking: 'Ranglijst',
+    allDone: 'Alles klaar! 🎉',
+    seasonEnded: 'Seizoen afgelopen',
+    seasonEndsToday: 'Seizoen eindigt vandaag',
+    seasonEndsInDays: (n) => `Seizoen eindigt over ${n} dagen`,
+    eventPassed: 'Het evenement is voorbij',
+    eventToday: 'De grote dag is vandaag!',
+    eventInDays: (n) => `Nog ${n} dagen`,
+    requestSkip: 'Overslaan aanvragen',
+    info: 'Info',
+    skipRequested: 'Overslaan aangevraagd — een ouder/beheerder keurt het goed',
+    skipFailed: 'Kon overslaan niet aanvragen',
+    actionFailed: 'Actie mislukt',
+    close: 'Sluiten',
+    statusDone: 'Klaar',
+    statusPending: 'Wacht op goedkeuring',
+    statusSkip: 'Overslaan aangevraagd',
+    statusOpen: 'Open',
+    pts: (n) => `${n} ptn`,
+    shopEmpty: 'Nu geen items beschikbaar.',
+    shopFailed: 'Kan winkel niet laden',
+    bought: 'Gekocht',
+    locked: 'Vergrendeld',
+    closed: 'Gesloten',
+    buy: 'Kopen',
+    buyDone: 'Klaar',
+    purchaseFailed: 'Aankoop mislukt',
+    badgesEmpty: 'Nog geen badges verdiend.',
+    badgesFailed: 'Kan badges niet laden',
+    tierStarter: 'Starter',
+    tierBronze: 'Brons',
+    tierSilver: 'Zilver',
+    tierGold: 'Goud',
+    badgeProgress: (metric, u, thr, tier) => `${metric}${u} → ${thr}${u} voor ${tier}`,
+    rankingEmpty: 'Nog geen leden.',
+    rankingFailed: 'Kan ranglijst niet laden',
+    cfgServerUrl: 'Server-URL',
+    cfgEmail: 'Ordoly-e-mail',
+    cfgKey: 'API-sleutel',
+    cfgTitle: 'Titel (optioneel)',
+    cfgLanguage: 'Taal',
+    cfgLangAuto: 'Automatisch (Home Assistant)',
+    cfgHint: 'Genereer de API-sleutel in de Ordoly-app: Instellingen → Home Assistant-muur. Gebruik het e-mailadres van je Ordoly-account.',
+    errBaseUrl: 'De server-URL is vereist',
+    errCreds: 'E-mailadres en sleutel zijn vereist — genereer de sleutel in de Ordoly-app (Instellingen → Home Assistant-muur) en gebruik je Ordoly-e-mailadres',
+    pickerDesc: 'Toon één Ordoly-muur (groep of aangepast) live en interactief.',
+  },
+  fr: {
+    loading: 'Chargement…',
+    couldNotConnect: 'Connexion impossible',
+    invalidCreds: 'E-mail ou clé invalide',
+    wallUnavailable: "Ce mur est indisponible (l'administrateur a peut-être perdu l'accès)",
+    tooManyAttempts: 'Trop de tentatives — réessayez dans un instant',
+    signInFailed: (n) => `Échec de la connexion (${n})`,
+    cannotReach: "Impossible de joindre le serveur Ordoly. Vérifiez l'URL du serveur.",
+    credentialRevoked: 'Accès révoqué',
+    failedToLoadCode: (n) => `Échec du chargement (${n})`,
+    failedToLoad: 'Échec du chargement',
+    refresh: 'Actualiser',
+    everyoneDone: "Tout le monde a fini pour aujourd'hui ! 🎉",
+    memberCount: (n) => (n === 1 ? '1 membre' : `${n} membres`),
+    wallInactive: 'Ce mur est inactif.',
+    noContent: 'Rien à afficher pour le moment.',
+    shop: 'Boutique',
+    badges: 'Badges',
+    ranking: 'Classement',
+    allDone: 'Tout fait ! 🎉',
+    seasonEnded: 'Saison terminée',
+    seasonEndsToday: 'La saison se termine aujourd\'hui',
+    seasonEndsInDays: (n) => `La saison se termine dans ${n} jours`,
+    eventPassed: "L'événement est passé",
+    eventToday: "Le grand jour, c'est aujourd'hui !",
+    eventInDays: (n) => `Plus que ${n} jours`,
+    requestSkip: 'Demander à passer',
+    info: 'Infos',
+    skipRequested: 'Demande de saut envoyée — un parent/administrateur validera',
+    skipFailed: 'Impossible de demander à passer',
+    actionFailed: "Échec de l'action",
+    close: 'Fermer',
+    statusDone: 'Fait',
+    statusPending: "En attente d'approbation",
+    statusSkip: 'Saut demandé',
+    statusOpen: 'Ouvert',
+    pts: (n) => `${n} pts`,
+    shopEmpty: 'Aucun article disponible pour le moment.',
+    shopFailed: 'Échec du chargement de la boutique',
+    bought: 'Acheté',
+    locked: 'Verrouillé',
+    closed: 'Fermée',
+    buy: 'Acheter',
+    buyDone: 'Fait',
+    purchaseFailed: "Échec de l'achat",
+    badgesEmpty: "Aucun badge gagné pour l'instant.",
+    badgesFailed: 'Échec du chargement des badges',
+    tierStarter: 'Débutant',
+    tierBronze: 'Bronze',
+    tierSilver: 'Argent',
+    tierGold: 'Or',
+    badgeProgress: (metric, u, thr, tier) => `${metric}${u} → ${thr}${u} pour ${tier}`,
+    rankingEmpty: 'Aucun membre pour le moment.',
+    rankingFailed: 'Échec du chargement du classement',
+    cfgServerUrl: 'URL du serveur',
+    cfgEmail: 'E-mail Ordoly',
+    cfgKey: 'Clé API',
+    cfgTitle: 'Titre (facultatif)',
+    cfgLanguage: 'Langue',
+    cfgLangAuto: 'Auto (Home Assistant)',
+    cfgHint: "Générez la clé API dans l'app Ordoly : Paramètres → Mur Home Assistant. Utilisez l'e-mail de votre compte Ordoly.",
+    errBaseUrl: "L'URL du serveur est requise",
+    errCreds: "L'e-mail et la clé sont requis — générez la clé dans l'app Ordoly (Paramètres → Mur Home Assistant) et utilisez votre e-mail Ordoly",
+    pickerDesc: 'Affichez un mur Ordoly (groupe ou personnalisé) en direct et interactif.',
+  },
+  es: {
+    loading: 'Cargando…',
+    couldNotConnect: 'No se pudo conectar',
+    invalidCreds: 'Correo o clave no válidos',
+    wallUnavailable: 'Este muro no está disponible (puede que el administrador haya perdido el acceso)',
+    tooManyAttempts: 'Demasiados intentos — inténtalo de nuevo en un momento',
+    signInFailed: (n) => `Error al iniciar sesión (${n})`,
+    cannotReach: 'No se puede conectar con el servidor de Ordoly. Comprueba la URL del servidor.',
+    credentialRevoked: 'Acceso revocado',
+    failedToLoadCode: (n) => `Error al cargar (${n})`,
+    failedToLoad: 'Error al cargar',
+    refresh: 'Actualizar',
+    everyoneDone: '¡Todos han terminado por hoy! 🎉',
+    memberCount: (n) => (n === 1 ? '1 miembro' : `${n} miembros`),
+    wallInactive: 'Este muro está inactivo.',
+    noContent: 'Nada que mostrar ahora mismo.',
+    shop: 'Tienda',
+    badges: 'Insignias',
+    ranking: 'Clasificación',
+    allDone: '¡Todo hecho! 🎉',
+    seasonEnded: 'Temporada terminada',
+    seasonEndsToday: 'La temporada termina hoy',
+    seasonEndsInDays: (n) => `La temporada termina en ${n} días`,
+    eventPassed: 'El evento ya pasó',
+    eventToday: '¡El gran día es hoy!',
+    eventInDays: (n) => `Faltan ${n} días`,
+    requestSkip: 'Solicitar omitir',
+    info: 'Info',
+    skipRequested: 'Omisión solicitada — un padre/administrador la aprobará',
+    skipFailed: 'No se pudo solicitar la omisión',
+    actionFailed: 'La acción falló',
+    close: 'Cerrar',
+    statusDone: 'Hecho',
+    statusPending: 'Pendiente de aprobación',
+    statusSkip: 'Omisión solicitada',
+    statusOpen: 'Abierto',
+    pts: (n) => `${n} pts`,
+    shopEmpty: 'No hay artículos disponibles ahora mismo.',
+    shopFailed: 'Error al cargar la tienda',
+    bought: 'Comprado',
+    locked: 'Bloqueado',
+    closed: 'Cerrada',
+    buy: 'Comprar',
+    buyDone: 'Hecho',
+    purchaseFailed: 'La compra falló',
+    badgesEmpty: 'Aún no se han ganado insignias.',
+    badgesFailed: 'Error al cargar las insignias',
+    tierStarter: 'Principiante',
+    tierBronze: 'Bronce',
+    tierSilver: 'Plata',
+    tierGold: 'Oro',
+    badgeProgress: (metric, u, thr, tier) => `${metric}${u} → ${thr}${u} para ${tier}`,
+    rankingEmpty: 'Aún no hay miembros.',
+    rankingFailed: 'Error al cargar la clasificación',
+    cfgServerUrl: 'URL del servidor',
+    cfgEmail: 'Correo de Ordoly',
+    cfgKey: 'Clave API',
+    cfgTitle: 'Título (opcional)',
+    cfgLanguage: 'Idioma',
+    cfgLangAuto: 'Automático (Home Assistant)',
+    cfgHint: 'Genera la clave API en la app de Ordoly: Ajustes → Muro de Home Assistant. Usa el correo de tu cuenta de Ordoly.',
+    errBaseUrl: 'La URL del servidor es obligatoria',
+    errCreds: 'El correo y la clave son obligatorios — genera la clave en la app de Ordoly (Ajustes → Muro de Home Assistant) y usa tu correo de Ordoly',
+    pickerDesc: 'Muestra un muro de Ordoly (de grupo o personalizado) en vivo e interactivo.',
+  },
+  el: {
+    loading: 'Φόρτωση…',
+    couldNotConnect: 'Δεν ήταν δυνατή η σύνδεση',
+    invalidCreds: 'Μη έγκυρο email ή κλειδί',
+    wallUnavailable: 'Αυτός ο τοίχος δεν είναι διαθέσιμος (ο διαχειριστής μπορεί να έχασε την πρόσβαση)',
+    tooManyAttempts: 'Πάρα πολλές προσπάθειες — δοκιμάστε ξανά σύντομα',
+    signInFailed: (n) => `Η σύνδεση απέτυχε (${n})`,
+    cannotReach: 'Δεν είναι δυνατή η σύνδεση με τον διακομιστή Ordoly. Ελέγξτε το URL του διακομιστή.',
+    credentialRevoked: 'Η πρόσβαση ανακλήθηκε',
+    failedToLoadCode: (n) => `Αποτυχία φόρτωσης (${n})`,
+    failedToLoad: 'Αποτυχία φόρτωσης',
+    refresh: 'Ανανέωση',
+    everyoneDone: 'Όλοι τελείωσαν για σήμερα! 🎉',
+    memberCount: (n) => (n === 1 ? '1 μέλος' : `${n} μέλη`),
+    wallInactive: 'Αυτός ο τοίχος είναι ανενεργός.',
+    noContent: 'Δεν υπάρχει τίποτα για εμφάνιση αυτή τη στιγμή.',
+    shop: 'Κατάστημα',
+    badges: 'Σήματα',
+    ranking: 'Κατάταξη',
+    allDone: 'Όλα έτοιμα! 🎉',
+    seasonEnded: 'Η σεζόν έληξε',
+    seasonEndsToday: 'Η σεζόν τελειώνει σήμερα',
+    seasonEndsInDays: (n) => `Η σεζόν τελειώνει σε ${n} ημέρες`,
+    eventPassed: 'Η εκδήλωση πέρασε',
+    eventToday: 'Η μεγάλη μέρα είναι σήμερα!',
+    eventInDays: (n) => `${n} ημέρες ακόμη`,
+    requestSkip: 'Αίτημα παράλειψης',
+    info: 'Πληροφορίες',
+    skipRequested: 'Ζητήθηκε παράλειψη — ένας γονέας/διαχειριστής θα την εγκρίνει',
+    skipFailed: 'Δεν ήταν δυνατό το αίτημα παράλειψης',
+    actionFailed: 'Η ενέργεια απέτυχε',
+    close: 'Κλείσιμο',
+    statusDone: 'Έγινε',
+    statusPending: 'Αναμονή έγκρισης',
+    statusSkip: 'Ζητήθηκε παράλειψη',
+    statusOpen: 'Ανοιχτό',
+    pts: (n) => `${n} πόντ.`,
+    shopEmpty: 'Δεν υπάρχουν διαθέσιμα προϊόντα αυτή τη στιγμή.',
+    shopFailed: 'Αποτυχία φόρτωσης καταστήματος',
+    bought: 'Αγοράστηκε',
+    locked: 'Κλειδωμένο',
+    closed: 'Κλειστό',
+    buy: 'Αγορά',
+    buyDone: 'Έγινε',
+    purchaseFailed: 'Η αγορά απέτυχε',
+    badgesEmpty: 'Δεν έχουν κερδηθεί σήματα ακόμη.',
+    badgesFailed: 'Αποτυχία φόρτωσης σημάτων',
+    tierStarter: 'Αρχάριος',
+    tierBronze: 'Χάλκινο',
+    tierSilver: 'Ασημένιο',
+    tierGold: 'Χρυσό',
+    badgeProgress: (metric, u, thr, tier) => `${metric}${u} → ${thr}${u} για ${tier}`,
+    rankingEmpty: 'Δεν υπάρχουν μέλη ακόμη.',
+    rankingFailed: 'Αποτυχία φόρτωσης κατάταξης',
+    cfgServerUrl: 'URL διακομιστή',
+    cfgEmail: 'Email Ordoly',
+    cfgKey: 'Κλειδί API',
+    cfgTitle: 'Τίτλος (προαιρετικό)',
+    cfgLanguage: 'Γλώσσα',
+    cfgLangAuto: 'Αυτόματα (Home Assistant)',
+    cfgHint: 'Δημιουργήστε το κλειδί API στην εφαρμογή Ordoly: Ρυθμίσεις → Home Assistant wall. Χρησιμοποιήστε το email του λογαριασμού σας Ordoly.',
+    errBaseUrl: 'Απαιτείται το URL του διακομιστή',
+    errCreds: 'Απαιτούνται email και κλειδί — δημιουργήστε το κλειδί στην εφαρμογή Ordoly (Ρυθμίσεις → Home Assistant wall) και χρησιμοποιήστε το email σας Ordoly',
+    pickerDesc: 'Εμφανίστε έναν τοίχο Ordoly (ομάδας ή προσαρμοσμένο) ζωντανά και διαδραστικά.',
+  },
+  tr: {
+    loading: 'Yükleniyor…',
+    couldNotConnect: 'Bağlanılamadı',
+    invalidCreds: 'Geçersiz e-posta veya anahtar',
+    wallUnavailable: 'Bu duvar kullanılamıyor (yönetici erişimi kaybetmiş olabilir)',
+    tooManyAttempts: 'Çok fazla deneme — birazdan tekrar deneyin',
+    signInFailed: (n) => `Giriş başarısız (${n})`,
+    cannotReach: "Ordoly sunucusuna ulaşılamıyor. Sunucu URL'sini kontrol edin.",
+    credentialRevoked: 'Erişim iptal edildi',
+    failedToLoadCode: (n) => `Yükleme başarısız (${n})`,
+    failedToLoad: 'Yükleme başarısız',
+    refresh: 'Yenile',
+    everyoneDone: 'Bugün herkes bitirdi! 🎉',
+    memberCount: (n) => `${n} üye`,
+    wallInactive: 'Bu duvar etkin değil.',
+    noContent: 'Şu anda gösterilecek bir şey yok.',
+    shop: 'Mağaza',
+    badges: 'Rozetler',
+    ranking: 'Sıralama',
+    allDone: 'Hepsi bitti! 🎉',
+    seasonEnded: 'Sezon sona erdi',
+    seasonEndsToday: 'Sezon bugün bitiyor',
+    seasonEndsInDays: (n) => `Sezon ${n} gün içinde bitiyor`,
+    eventPassed: 'Etkinlik geçti',
+    eventToday: 'Büyük gün bugün!',
+    eventInDays: (n) => `${n} gün kaldı`,
+    requestSkip: 'Atlama iste',
+    info: 'Bilgi',
+    skipRequested: 'Atlama istendi — bir ebeveyn/yönetici onaylayacak',
+    skipFailed: 'Atlama istenemedi',
+    actionFailed: 'İşlem başarısız',
+    close: 'Kapat',
+    statusDone: 'Tamam',
+    statusPending: 'Onay bekliyor',
+    statusSkip: 'Atlama istendi',
+    statusOpen: 'Açık',
+    pts: (n) => `${n} puan`,
+    shopEmpty: 'Şu anda mevcut ürün yok.',
+    shopFailed: 'Mağaza yüklenemedi',
+    bought: 'Alındı',
+    locked: 'Kilitli',
+    closed: 'Kapalı',
+    buy: 'Satın al',
+    buyDone: 'Tamam',
+    purchaseFailed: 'Satın alma başarısız',
+    badgesEmpty: 'Henüz rozet kazanılmadı.',
+    badgesFailed: 'Rozetler yüklenemedi',
+    tierStarter: 'Başlangıç',
+    tierBronze: 'Bronz',
+    tierSilver: 'Gümüş',
+    tierGold: 'Altın',
+    badgeProgress: (metric, u, thr, tier) => `${metric}${u} → ${tier} için ${thr}${u}`,
+    rankingEmpty: 'Henüz üye yok.',
+    rankingFailed: 'Sıralama yüklenemedi',
+    cfgServerUrl: "Sunucu URL'si",
+    cfgEmail: 'Ordoly e-postası',
+    cfgKey: 'API anahtarı',
+    cfgTitle: 'Başlık (isteğe bağlı)',
+    cfgLanguage: 'Dil',
+    cfgLangAuto: 'Otomatik (Home Assistant)',
+    cfgHint: 'API anahtarını Ordoly uygulamasında oluşturun: Ayarlar → Home Assistant wall. Ordoly hesap e-postanızı kullanın.',
+    errBaseUrl: 'Sunucu URL\'si gerekli',
+    errCreds: 'E-posta ve anahtar gerekli — anahtarı Ordoly uygulamasında oluşturun (Ayarlar → Home Assistant wall) ve Ordoly e-postanızı kullanın',
+    pickerDesc: 'Bir Ordoly duvarını (grup veya özel) canlı ve etkileşimli gösterin.',
+  },
+  zh: {
+    loading: '加载中…',
+    couldNotConnect: '无法连接',
+    invalidCreds: '邮箱或密钥无效',
+    wallUnavailable: '此墙不可用（管理员可能已失去访问权限）',
+    tooManyAttempts: '尝试次数过多 — 请稍后重试',
+    signInFailed: (n) => `登录失败（${n}）`,
+    cannotReach: '无法连接到 Ordoly 服务器。请检查服务器网址。',
+    credentialRevoked: '访问权限已撤销',
+    failedToLoadCode: (n) => `加载失败（${n}）`,
+    failedToLoad: '加载失败',
+    refresh: '刷新',
+    everyoneDone: '今天大家都完成了！🎉',
+    memberCount: (n) => `${n} 名成员`,
+    wallInactive: '此墙未激活。',
+    noContent: '暂时没有可显示的内容。',
+    shop: '商店',
+    badges: '徽章',
+    ranking: '排行榜',
+    allDone: '全部完成！🎉',
+    seasonEnded: '赛季已结束',
+    seasonEndsToday: '赛季今日结束',
+    seasonEndsInDays: (n) => `赛季将在 ${n} 天后结束`,
+    eventPassed: '活动已结束',
+    eventToday: '大日子就是今天！',
+    eventInDays: (n) => `还有 ${n} 天`,
+    requestSkip: '申请跳过',
+    info: '信息',
+    skipRequested: '已申请跳过 — 家长/管理员将审批',
+    skipFailed: '无法申请跳过',
+    actionFailed: '操作失败',
+    close: '关闭',
+    statusDone: '完成',
+    statusPending: '等待审批',
+    statusSkip: '已申请跳过',
+    statusOpen: '未完成',
+    pts: (n) => `${n} 分`,
+    shopEmpty: '暂时没有可购买的物品。',
+    shopFailed: '加载商店失败',
+    bought: '已购买',
+    locked: '已锁定',
+    closed: '已关闭',
+    buy: '购买',
+    buyDone: '完成',
+    purchaseFailed: '购买失败',
+    badgesEmpty: '尚未获得徽章。',
+    badgesFailed: '加载徽章失败',
+    tierStarter: '入门',
+    tierBronze: '铜',
+    tierSilver: '银',
+    tierGold: '金',
+    badgeProgress: (metric, u, thr, tier) => `${metric}${u} → ${thr}${u}（${tier}）`,
+    rankingEmpty: '暂无成员。',
+    rankingFailed: '加载排行榜失败',
+    cfgServerUrl: '服务器网址',
+    cfgEmail: 'Ordoly 邮箱',
+    cfgKey: 'API 密钥',
+    cfgTitle: '标题（可选）',
+    cfgLanguage: '语言',
+    cfgLangAuto: '自动（Home Assistant）',
+    cfgHint: '在 Ordoly 应用中生成 API 密钥：设置 → Home Assistant wall。使用你的 Ordoly 账户邮箱。',
+    errBaseUrl: '需要服务器网址',
+    errCreds: '需要邮箱和密钥 — 在 Ordoly 应用中生成密钥（设置 → Home Assistant wall）并使用你的 Ordoly 邮箱',
+    pickerDesc: '实时、可交互地显示一个 Ordoly 墙（群组或自定义）。',
+  },
+};
+
+// Native language names for the editor dropdown, in a stable display order.
+const LANG_ORDER = ['en', 'nl', 'fr', 'es', 'el', 'tr', 'zh'];
+const LANG_NAMES = {
+  en: 'English', nl: 'Nederlands', fr: 'Français', es: 'Español',
+  el: 'Ελληνικά', tr: 'Türkçe', zh: '中文',
+};
+
+// Resolve a language code. An explicit choice wins; "auto"/empty follows the
+// Home Assistant UI language, then the browser, then English. Region suffixes
+// (en-GB, zh-Hans) collapse to the base language.
+function resolveLocale(want, haLang) {
+  if (want && want !== 'auto' && I18N[want]) return want;
+  const raw = String(haLang || (typeof navigator !== 'undefined' ? navigator.language : '') || 'en');
+  const code = raw.toLowerCase().split(/[-_]/)[0];
+  return I18N[code] ? code : 'en';
+}
+
+// Translate a key for a locale. Values are either strings or functions (for
+// interpolated/plural forms); missing keys fall back to English, then the key.
+function tr(loc, key, ...args) {
+  const dict = I18N[loc] || I18N.en;
+  let v = dict[key];
+  if (v == null) v = I18N.en[key];
+  if (v == null) return key;
+  return typeof v === 'function' ? v(...args) : v;
+}
+
 class OrdolyWallCard extends HTMLElement {
   constructor() {
     super();
@@ -215,15 +705,17 @@ class OrdolyWallCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config || !config.base_url) throw new Error('ordoly-wall-card: "base_url" is required');
+    const loc = resolveLocale(config && config.language, this._haLang);
+    if (!config || !config.base_url) throw new Error('ordoly-wall-card: ' + tr(loc, 'errBaseUrl'));
     if (!config.email || !config.key) {
-      throw new Error('ordoly-wall-card: "email" and "key" are required (generate the key in the Ordoly app → Settings → Home Assistant wall, and use your Ordoly email)');
+      throw new Error('ordoly-wall-card: ' + tr(loc, 'errCreds'));
     }
     this._config = {
       base_url: String(config.base_url).replace(/\/+$/, ''),
       email: String(config.email),
       key: String(config.key),
       title: config.title || '',
+      language: config.language || 'auto',
       height: config.height || '62vh',
     };
     // Debounced: the dashboard editor calls setConfig on every keystroke, so
@@ -231,7 +723,27 @@ class OrdolyWallCard extends HTMLElement {
     if (this.isConnected) this._scheduleRestart(700);
   }
 
-  set hass(_) { /* not used — the card talks to the Ordoly backend directly */ }
+  // The card talks to the Ordoly backend directly, but we do read the Home
+  // Assistant UI language so "Auto" can follow it. Capture it and re-render the
+  // visible wall if the language actually changed while on Auto.
+  set hass(hass) {
+    const lang = hass && (hass.language || (hass.locale && hass.locale.language));
+    if (!lang) return;
+    const code = String(lang).toLowerCase().split(/[-_]/)[0];
+    if (!code || code === this._haLang) return;
+    this._haLang = code;
+    const auto = !this._config || !this._config.language || this._config.language === 'auto';
+    if (auto && this._built && this._data) this._renderWall(this._data);
+  }
+
+  // Active display language + a translator bound to it.
+  _locale() { return resolveLocale(this._config && this._config.language, this._haLang); }
+  _t(key, ...args) { return tr(this._locale(), key, ...args); }
+  _tierLabel(t) {
+    const k = { grey: 'tierStarter', bronze: 'tierBronze', silver: 'tierSilver', gold: 'tierGold' }[t];
+    return k ? this._t(k) : '';
+  }
+
   getCardSize() { return 8; }
   static getConfigElement() { return document.createElement('ordoly-wall-card-editor'); }
   static getStubConfig() {
@@ -251,9 +763,9 @@ class OrdolyWallCard extends HTMLElement {
     this._teardown();
     this._build();
     this.shadowRoot.host.style.setProperty('--owc-col-max', this._config.height);
-    this._setState(this._config.title || 'Loading…', 'state');
+    this._setState(this._config.title || this._t('loading'), 'state');
     const ok = await this._authenticate();
-    if (!ok) { this._setState(this._authError || 'Could not connect', 'error'); return; }
+    if (!ok) { this._setState(this._authError || this._t('couldNotConnect'), 'error'); return; }
     await this._load();
     this._openStream();
     this._refreshTimer = setInterval(() => this._refreshSession(), 10 * 60 * 1000);
@@ -292,7 +804,9 @@ class OrdolyWallCard extends HTMLElement {
     this._columnsEl = this.shadowRoot.getElementById('owc-columns');
     this._stateEl = this.shadowRoot.getElementById('owc-state');
     this._toastEl = this.shadowRoot.getElementById('owc-toast');
-    this.shadowRoot.getElementById('owc-refresh').addEventListener('click', () => this._load());
+    const refreshBtn = this.shadowRoot.getElementById('owc-refresh');
+    refreshBtn.title = this._t('refresh');
+    refreshBtn.addEventListener('click', () => this._load());
     this._built = true;
   }
 
@@ -325,10 +839,10 @@ class OrdolyWallCard extends HTMLElement {
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        this._authError = r.status === 401 ? 'Invalid email or key'
-          : r.status === 403 ? 'This wall is unavailable (the admin may have lost access)'
-          : r.status === 429 ? 'Too many attempts — try again shortly'
-          : (j.message || `Sign-in failed (${r.status})`);
+        this._authError = r.status === 401 ? this._t('invalidCreds')
+          : r.status === 403 ? this._t('wallUnavailable')
+          : r.status === 429 ? this._t('tooManyAttempts')
+          : (j.message || this._t('signInFailed', r.status));
         return false;
       }
       const j = await r.json();
@@ -338,7 +852,7 @@ class OrdolyWallCard extends HTMLElement {
       this._caps = j.capabilities || {};
       return true;
     } catch (e) {
-      this._authError = 'Cannot reach the Ordoly server. Check the Server URL.';
+      this._authError = this._t('cannotReach');
       return false;
     }
   }
@@ -376,14 +890,14 @@ class OrdolyWallCard extends HTMLElement {
     try {
       const r = await this._api('/ha-wall/data');
       if (!r.ok) {
-        if (r.status === 401) { this._setState(this._authError || 'Credential revoked', 'error'); return; }
-        throw new Error(`Failed to load (${r.status})`);
+        if (r.status === 401) { this._setState(this._authError || this._t('credentialRevoked'), 'error'); return; }
+        throw new Error(this._t('failedToLoadCode', r.status));
       }
       this._data = await r.json();
       this._renderWall(this._data);
     } catch (e) {
       // Keep showing the last good wall on a transient blip; only show error if empty.
-      if (!this._data) this._setState(e.message || 'Failed to load', 'error');
+      if (!this._data) this._setState(e.message || this._t('failedToLoad'), 'error');
     }
   }
 
@@ -427,15 +941,14 @@ class OrdolyWallCard extends HTMLElement {
     this._headerEl.classList.toggle('done', everyoneDone);
     this.shadowRoot.getElementById('owc-header-icon').textContent = everyoneDone ? '🎉' : '📋';
     this.shadowRoot.getElementById('owc-title').textContent = everyoneDone
-      ? "Everyone's done for today! 🎉"
+      ? this._t('everyoneDone')
       : (this._config.title || (data.wall && data.wall.name) || 'Ordoly Wall');
-    this.shadowRoot.getElementById('owc-count').textContent =
-      users.length === 1 ? '1 member' : `${users.length} members`;
+    this.shadowRoot.getElementById('owc-count').textContent = this._t('memberCount', users.length);
 
     const cols = this._columnsEl;
     cols.innerHTML = '';
     if (users.length === 0) {
-      this._setState(data.inactive ? 'This wall is inactive.' : 'No content to show right now.', 'state');
+      this._setState(data.inactive ? this._t('wallInactive') : this._t('noContent'), 'state');
       return;
     }
     for (const u of users) cols.appendChild(this._renderColumn(u));
@@ -479,17 +992,17 @@ class OrdolyWallCard extends HTMLElement {
       acts.className = 'col-actions';
       if (shopGroups.length) {
         const chip = document.createElement('button');
-        chip.className = 'action-chip'; chip.textContent = '🛍 Shop';
+        chip.className = 'action-chip'; chip.textContent = '🛍 ' + this._t('shop');
         chip.addEventListener('click', () => this._openShop(user.id, shopGroups, groupsBalance));
         acts.appendChild(chip);
       }
       if (badgeGroups.length) {
         const b = document.createElement('button');
-        b.className = 'action-chip'; b.textContent = '🏅 Badges';
+        b.className = 'action-chip'; b.textContent = '🏅 ' + this._t('badges');
         b.addEventListener('click', () => this._openBadges(user.id, user.name || '?', badgeGroups));
         acts.appendChild(b);
         const r = document.createElement('button');
-        r.className = 'action-chip'; r.textContent = '👑 Ranking';
+        r.className = 'action-chip'; r.textContent = '👑 ' + this._t('ranking');
         r.addEventListener('click', () => this._openRanking(badgeGroups));
         acts.appendChild(r);
       }
@@ -520,7 +1033,7 @@ class OrdolyWallCard extends HTMLElement {
     const tasks = (u.tasks || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     if (tasks.length === 0) {
       const empty = document.createElement('div');
-      empty.className = 'col-empty'; empty.textContent = 'All done! 🎉';
+      empty.className = 'col-empty'; empty.textContent = this._t('allDone');
       list.appendChild(empty);
     } else {
       const byGroup = new Map();
@@ -596,11 +1109,11 @@ class OrdolyWallCard extends HTMLElement {
     if (gc.groupType === 'challenge' && gc.seasonEndDate) {
       const days = daysUntil(gc.seasonEndDate); if (days == null) return null;
       ended = days < 0; icon = ended ? '🏁' : '⏳';
-      label = ended ? 'Season ended' : days === 0 ? 'Season ends today' : `Season ends in ${days} days`;
+      label = ended ? this._t('seasonEnded') : days === 0 ? this._t('seasonEndsToday') : this._t('seasonEndsInDays', days);
     } else if (gc.groupType === 'event' && gc.eventDate) {
       const days = daysUntil(gc.eventDate); if (days == null) return null;
       ended = days < 0; icon = ended ? '🏁' : '🎉';
-      label = ended ? 'The event has passed' : days === 0 ? 'The big day is today!' : `${days} days to go`;
+      label = ended ? this._t('eventPassed') : days === 0 ? this._t('eventToday') : this._t('eventInDays', days);
     } else { return null; }
     const el = document.createElement('div');
     el.className = 'grp-countdown' + (ended ? ' ended' : '');
@@ -635,12 +1148,12 @@ class OrdolyWallCard extends HTMLElement {
     // Skip — only meaningful when not done/pending and not already requested.
     if (!done && !pending && !skipPending) {
       const skip = document.createElement('button');
-      skip.className = 'task-action'; skip.title = 'Request skip'; skip.textContent = '⏭';
+      skip.className = 'task-action'; skip.title = this._t('requestSkip'); skip.textContent = '⏭';
       skip.addEventListener('click', (e) => { e.stopPropagation(); this._skipTask(columnUserId, c); });
       sidecar.appendChild(skip);
     }
     const info = document.createElement('button');
-    info.className = 'task-action'; info.title = 'Info'; info.textContent = 'ℹ️';
+    info.className = 'task-action'; info.title = this._t('info'); info.textContent = 'ℹ️';
     info.addEventListener('click', (e) => { e.stopPropagation(); this._showInfo(c, done, pending, skipPending); });
     sidecar.appendChild(info);
 
@@ -663,18 +1176,18 @@ class OrdolyWallCard extends HTMLElement {
         : await this._api('/ha-wall/complete', { method: 'POST', body: { user_id: userId, task_id: task.id } });
       if (!res.ok && res.status !== 409) {
         const j = await res.json().catch(() => ({}));
-        this._toast(j.message || 'Action failed');
+        this._toast(j.message || this._t('actionFailed'));
       }
-    } catch (_) { this._toast('Action failed'); }
+    } catch (_) { this._toast(this._t('actionFailed')); }
     finally { this._busyTasks.delete(key); await this._load(); }
   }
 
   async _skipTask(userId, task) {
     try {
       const res = await this._api('/ha-wall/skip', { method: 'POST', body: { user_id: userId, task_id: task.id } });
-      if (res.ok) this._toast('Skip requested — a parent/admin will approve it');
-      else { const j = await res.json().catch(() => ({})); this._toast(j.message || 'Could not request skip'); }
-    } catch (_) { this._toast('Could not request skip'); }
+      if (res.ok) this._toast(this._t('skipRequested'));
+      else { const j = await res.json().catch(() => ({})); this._toast(j.message || this._t('skipFailed')); }
+    } catch (_) { this._toast(this._t('skipFailed')); }
     finally { await this._load(); }
   }
 
@@ -684,15 +1197,17 @@ class OrdolyWallCard extends HTMLElement {
     if (!dlg) {
       dlg = document.createElement('dialog');
       dlg.id = 'owc-info-dialog';
-      dlg.innerHTML = `<h3></h3><div class="info-body"></div><menu><button value="close">Close</button></menu>`;
+      dlg.innerHTML = `<h3></h3><div class="info-body"></div><menu><button value="close"></button></menu>`;
       this.shadowRoot.appendChild(dlg);
       dlg.querySelector('button').addEventListener('click', () => dlg.close());
     }
-    const status = done ? 'Done' : pending ? 'Awaiting approval' : skipPending ? 'Skip requested' : 'Open';
+    dlg.querySelector('menu button').textContent = this._t('close');
+    const status = done ? this._t('statusDone') : pending ? this._t('statusPending')
+      : skipPending ? this._t('statusSkip') : this._t('statusOpen');
     const parts = [];
     if (c.category_name) parts.push(`<div class="info-line">📂 ${esc(c.category_name)}</div>`);
     parts.push(`<div class="info-line">● ${esc(status)}</div>`);
-    if (c.base_points && c.base_points > 0) parts.push(`<div class="info-line">★ ${Number(c.base_points)} pts</div>`);
+    if (c.base_points && c.base_points > 0) parts.push(`<div class="info-line">★ ${esc(this._t('pts', Number(c.base_points)))}</div>`);
     dlg.querySelector('h3').textContent = c.name || '';
     dlg.querySelector('.info-body').innerHTML = parts.join('');
     if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
@@ -711,7 +1226,7 @@ class OrdolyWallCard extends HTMLElement {
     }
     dlg.querySelector('.panel-header h2').textContent = titleText;
     const body = dlg.querySelector('.panel-body');
-    body.innerHTML = '<p class="panel-loading">Loading…</p>';
+    body.innerHTML = `<p class="panel-loading">${esc(this._t('loading'))}</p>`;
     if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
     return body;
   }
@@ -730,7 +1245,7 @@ class OrdolyWallCard extends HTMLElement {
   }
 
   async _openShop(userId, shopGroups, groupsBalance) {
-    const body = this._panel('🛍 Shop');
+    const body = this._panel('🛍 ' + this._t('shop'));
     try {
       const results = await Promise.all(shopGroups.map(async (gc) => {
         const r = await this._api(`/ha-wall/shop?group_id=${gc.id}&user_id=${userId}`);
@@ -741,12 +1256,12 @@ class OrdolyWallCard extends HTMLElement {
       for (const { gc, items } of results) {
         if (multi) body.appendChild(this._panelGroupHeader(gc, groupsBalance[String(gc.id)] ?? null));
         if (!items.length) {
-          const p = document.createElement('p'); p.className = 'panel-empty'; p.textContent = 'No items available right now.';
+          const p = document.createElement('p'); p.className = 'panel-empty'; p.textContent = this._t('shopEmpty');
           body.appendChild(p);
         } else { for (const item of items) body.appendChild(this._shopRow(userId, gc, item)); }
       }
     } catch (e) {
-      body.innerHTML = `<p class="panel-error">${esc(e.message || 'Failed to load shop')}</p>`;
+      body.innerHTML = `<p class="panel-error">${esc(e.message || this._t('shopFailed'))}</p>`;
     }
   }
 
@@ -769,10 +1284,10 @@ class OrdolyWallCard extends HTMLElement {
     const cost = document.createElement('span'); cost.className = 'shop-item-cost'; cost.textContent = '★ ' + item.cost;
     trailing.appendChild(cost);
     const btn = document.createElement('button'); btn.className = 'shop-buy-btn';
-    if (alreadyBought) { btn.disabled = true; btn.textContent = 'Bought'; }
-    else if (locked) { btn.disabled = true; btn.textContent = '🔒 Locked'; }
-    else if (closed) { btn.disabled = true; btn.textContent = 'Closed'; }
-    else { btn.textContent = 'Buy'; btn.addEventListener('click', () => this._buy(userId, gc, item, btn)); }
+    if (alreadyBought) { btn.disabled = true; btn.textContent = this._t('bought'); }
+    else if (locked) { btn.disabled = true; btn.textContent = '🔒 ' + this._t('locked'); }
+    else if (closed) { btn.disabled = true; btn.textContent = this._t('closed'); }
+    else { btn.textContent = this._t('buy'); btn.addEventListener('click', () => this._buy(userId, gc, item, btn)); }
     trailing.appendChild(btn);
     row.appendChild(trailing);
     return row;
@@ -784,9 +1299,9 @@ class OrdolyWallCard extends HTMLElement {
       const r = await this._api('/ha-wall/shop/purchase', {
         method: 'POST', body: { group_id: gc.id, user_id: userId, item_id: item.id },
       });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || 'Purchase failed'); }
-      btn.textContent = '✓ Done';
-    } catch (e) { btn.disabled = false; btn.textContent = 'Buy'; this._toast(e.message); }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || this._t('purchaseFailed')); }
+      btn.textContent = '✓ ' + this._t('buyDone');
+    } catch (e) { btn.disabled = false; btn.textContent = this._t('buy'); this._toast(e.message); }
   }
 
   // ── badges + ranking ─────────────────────────────────────────────────────
@@ -807,10 +1322,10 @@ class OrdolyWallCard extends HTMLElement {
       const multi = results.length > 1;
       for (const { gc, badges } of results) {
         if (multi) body.appendChild(this._panelGroupHeader(gc, null));
-        if (!badges.length) { const p = document.createElement('p'); p.className = 'panel-empty'; p.textContent = 'No badges earned yet.'; body.appendChild(p); }
+        if (!badges.length) { const p = document.createElement('p'); p.className = 'panel-empty'; p.textContent = this._t('badgesEmpty'); body.appendChild(p); }
         else { for (const badge of badges) body.appendChild(this._badgeTile(badge)); }
       }
-    } catch (e) { body.innerHTML = `<p class="panel-error">${esc(e.message || 'Failed to load badges')}</p>`; }
+    } catch (e) { body.innerHTML = `<p class="panel-error">${esc(e.message || this._t('badgesFailed'))}</p>`; }
   }
 
   _badgeTile(badge) {
@@ -821,12 +1336,12 @@ class OrdolyWallCard extends HTMLElement {
     row.appendChild(ico);
     const info = document.createElement('div'); info.className = 'badge-info';
     const nm = document.createElement('div'); nm.className = 'badge-name'; nm.textContent = badge.name || '';
-    const tier = document.createElement('div'); tier.className = 'badge-tier'; tier.style.color = color; tier.textContent = tierLabelFor(badge.reached_tier);
+    const tier = document.createElement('div'); tier.className = 'badge-tier'; tier.style.color = color; tier.textContent = this._tierLabel(badge.reached_tier);
     info.appendChild(nm); info.appendChild(tier);
     if (badge.next_tier && badge.next_threshold != null) {
       const prog = document.createElement('div'); prog.className = 'badge-progress';
       const u = badge.unit ? ` ${badge.unit}` : '';
-      prog.textContent = `${badge.metric}${u} → ${badge.next_threshold}${u} for ${badge.next_tier}`;
+      prog.textContent = this._t('badgeProgress', badge.metric, u, badge.next_threshold, badge.next_tier);
       info.appendChild(prog);
     }
     row.appendChild(info);
@@ -834,20 +1349,20 @@ class OrdolyWallCard extends HTMLElement {
   }
 
   async _openRanking(badgeGroups) {
-    const body = this._panel('👑 Ranking');
+    const body = this._panel('👑 ' + this._t('ranking'));
     try {
       const results = await Promise.all(badgeGroups.map(async (gc) => ({ gc, members: await this._badgeMembers(gc) })));
       body.innerHTML = '';
       const multi = results.length > 1;
       for (const { gc, members } of results) {
         if (multi) body.appendChild(this._panelGroupHeader(gc, null));
-        if (!members.length) { const p = document.createElement('p'); p.className = 'panel-empty'; p.textContent = 'No members yet.'; body.appendChild(p); continue; }
+        if (!members.length) { const p = document.createElement('p'); p.className = 'panel-empty'; p.textContent = this._t('rankingEmpty'); body.appendChild(p); continue; }
         const ranked = members
           .map((m) => ({ m, score: (m.badges || []).reduce((s, b) => s + tierPoints(b.reached_tier), 0) }))
           .sort((a, b) => b.score - a.score);
         ranked.forEach((e, i) => body.appendChild(this._rankRow(e.m, i + 1, e.score)));
       }
-    } catch (e) { body.innerHTML = `<p class="panel-error">${esc(e.message || 'Failed to load ranking')}</p>`; }
+    } catch (e) { body.innerHTML = `<p class="panel-error">${esc(e.message || this._t('rankingFailed'))}</p>`; }
   }
 
   _rankRow(member, rank, score) {
@@ -887,11 +1402,12 @@ class OrdolyWallCard extends HTMLElement {
 customElements.define('ordoly-wall-card', OrdolyWallCard);
 
 // ── Visual config editor ─────────────────────────────────────────────────────
+// [config key, i18n label key, input type, placeholder]
 const EDITOR_FIELDS = [
-  ['base_url', 'Server URL', 'text', 'http://homeassistant.local:3000'],
-  ['email', 'Ordoly email', 'text', ''],
-  ['key', 'API key', 'password', ''],
-  ['title', 'Title (optional)', 'text', ''],
+  ['base_url', 'cfgServerUrl', 'text', 'http://homeassistant.local:3000'],
+  ['email', 'cfgEmail', 'text', ''],
+  ['key', 'cfgKey', 'password', ''],
+  ['title', 'cfgTitle', 'text', ''],
 ];
 
 class OrdolyWallCardEditor extends HTMLElement {
@@ -900,7 +1416,19 @@ class OrdolyWallCardEditor extends HTMLElement {
     if (!this._built) this._build();
     else this._sync();
   }
-  set hass(_) {}
+  // Follow the Home Assistant UI language for the editor's own chrome (labels,
+  // hint). The "Language" dropdown separately controls the card's display
+  // language. Relabel in place on a language change — never rebuild, or the
+  // <input> being typed in would lose focus.
+  set hass(hass) {
+    const lang = hass && (hass.language || (hass.locale && hass.locale.language));
+    if (!lang) return;
+    const code = String(lang).toLowerCase().split(/[-_]/)[0];
+    if (!code || code === this._haLang) return;
+    this._haLang = code;
+    if (this._built) this._applyLabels();
+  }
+  _locale() { return resolveLocale('auto', this._haLang); }
   _emit() {
     this.dispatchEvent(new CustomEvent('config-changed', {
       detail: { config: this._config }, bubbles: true, composed: true,
@@ -912,19 +1440,27 @@ class OrdolyWallCardEditor extends HTMLElement {
   _build() {
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     const c = this._config || {};
+    const langValue = (c.language && I18N[c.language]) ? c.language : 'auto';
     this.shadowRoot.innerHTML = `
       <style>
         .row { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; }
         label { font-size:13px; color: var(--secondary-text-color, #666); }
-        input { padding:10px 12px; border-radius:8px; border:1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color, #000); font:inherit; }
+        input, select { padding:10px 12px; border-radius:8px; border:1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color, #000); font:inherit; }
         .hint { font-size:12px; color: var(--secondary-text-color, #888); margin: -4px 0 14px; }
       </style>
-      <div class="hint">Generate the API key in the Ordoly app: Settings → Home Assistant wall. Use your Ordoly account email.</div>
-      ${EDITOR_FIELDS.map(([k, lbl, type, ph]) => `
+      <div class="hint" id="owc-hint"></div>
+      ${EDITOR_FIELDS.map(([k, , type, ph]) => `
         <div class="row">
-          <label for="owc-${k}">${lbl}</label>
-          <input id="owc-${k}" type="${type}" placeholder="${ph}" value="${esc(c[k] || '')}">
-        </div>`).join('')}`;
+          <label for="owc-${k}" data-k="${k}"></label>
+          <input id="owc-${k}" type="${type}" placeholder="${esc(ph)}" value="${esc(c[k] || '')}">
+        </div>`).join('')}
+      <div class="row">
+        <label for="owc-language" data-k="language"></label>
+        <select id="owc-language">
+          <option value="auto"${langValue === 'auto' ? ' selected' : ''}></option>
+          ${LANG_ORDER.map((code) => `<option value="${code}"${langValue === code ? ' selected' : ''}>${esc(LANG_NAMES[code])}</option>`).join('')}
+        </select>
+      </div>`;
     this._inputs = {};
     for (const [k] of EDITOR_FIELDS) {
       const el = this.shadowRoot.getElementById(`owc-${k}`);
@@ -934,7 +1470,30 @@ class OrdolyWallCardEditor extends HTMLElement {
         this._emit();
       });
     }
+    this._langSel = this.shadowRoot.getElementById('owc-language');
+    this._langSel.addEventListener('change', (e) => {
+      this._config = { ...this._config, type: 'custom:ordoly-wall-card', language: e.target.value };
+      this._emit();
+    });
+    this._applyLabels();
     this._built = true;
+  }
+  // Localize the chrome (field labels, hint, "Auto" option) to the HA UI
+  // language, leaving the <input>/<select> values the admin is editing intact.
+  _applyLabels() {
+    const loc = this._locale();
+    const hint = this.shadowRoot.getElementById('owc-hint');
+    if (hint) hint.textContent = tr(loc, 'cfgHint');
+    for (const [k, i18nKey] of EDITOR_FIELDS) {
+      const lbl = this.shadowRoot.querySelector(`label[data-k="${k}"]`);
+      if (lbl) lbl.textContent = tr(loc, i18nKey);
+    }
+    const langLbl = this.shadowRoot.querySelector('label[data-k="language"]');
+    if (langLbl) langLbl.textContent = tr(loc, 'cfgLanguage');
+    if (this._langSel) {
+      const autoOpt = this._langSel.querySelector('option[value="auto"]');
+      if (autoOpt) autoOpt.textContent = tr(loc, 'cfgLangAuto');
+    }
   }
   // Reflect an external config change without disturbing the field being edited.
   _sync() {
@@ -942,16 +1501,21 @@ class OrdolyWallCardEditor extends HTMLElement {
       const v = (this._config && this._config[k]) || '';
       if (el !== this.shadowRoot.activeElement && el.value !== v) el.value = v;
     }
+    if (this._langSel && this._langSel !== this.shadowRoot.activeElement) {
+      const lv = (this._config && this._config.language && I18N[this._config.language]) ? this._config.language : 'auto';
+      if (this._langSel.value !== lv) this._langSel.value = lv;
+    }
   }
 }
 customElements.define('ordoly-wall-card-editor', OrdolyWallCardEditor);
 
-// Register in the Lovelace card picker.
+// Register in the Lovelace card picker. The picker runs before `hass` is
+// available, so the description best-effort follows the browser language.
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'ordoly-wall-card',
   name: 'Ordoly Wall',
-  description: 'Show one Ordoly wall (group or custom) live and interactive.',
+  description: tr(resolveLocale('auto', null), 'pickerDesc'),
   preview: false,
   documentationURL: 'https://github.com/your-org/ordoly',
 });
